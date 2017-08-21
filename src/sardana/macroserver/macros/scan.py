@@ -1495,25 +1495,46 @@ class timescan(Macro, Hookable):
     """
 
     param_def = [
-        ['nr_interv', Type.Integer, None, 'Number of scan intervals'],
+        ['nr_interv', Type.String, None, 'Number of scan intervals'],
         ['integ_time', Type.Float,   None, 'Integration time'],
         ['latency_time', Type.Float, 0, 'Latency time']]
 
     def prepare(self, nr_interv, integ_time, latency_time):
-        self.nr_interv = nr_interv
-        self.nr_points = nr_interv + 1
+        if nr_interv == "inf":
+            self.nr_interv = 0
+            self.nr_points = None
+            generator = self.infinite_step_generator
+        else:
+            self.nr_interv = int(nr_interv)
+            self.nr_points = self.nr_interv + 1
+            generator = None
         self.integ_time = integ_time
         self.latency_time = latency_time
-        self._gScan = TScan(self)
+        self._gScan = TScan(self, generator=generator)
+        self.stopped = False
+
+    def infinite_step_generator(self):
+        step = {}
+        step["integ_time"] = self.integ_time
+        self.point_no = 0
+        while not self.stopped:
+            step["point_id"] = self.point_no
+            self.point_no = self.point_no + 1
+            yield step
 
     def run(self, *args):
         for step in self._gScan.step_scan():
             yield step
 
+    def on_abort(self):
+        self.stopped = True
+
     def getTimeEstimation(self):
         mg_latency_time = self._gScan.measurement_group.getLatencyTime()
         latency_time = max(self.latency_time, mg_latency_time)
-        return self.nr_points * (self.integ_time + latency_time)
+        npoints = self.nr_points or 1
+        return npoints * (self.integ_time + latency_time) 
 
     def getIntervalEstimation(self):
         return self.nr_interv
+
